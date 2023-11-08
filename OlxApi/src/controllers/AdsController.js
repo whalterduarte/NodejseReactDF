@@ -40,6 +40,17 @@ module.exports = {
         res.json({error: 'Titulo e/ou categoria não foram preenchidos'})
         true
       }
+
+      if(cat.length < 12){
+        res.json({error: 'ID de Categoria invalido'})
+        return
+      }
+      const category = await Category.findById(cat)
+      if(!category){
+        res.json({error: 'Categoria inexistente'})
+        return
+      }
+
       if(price){
         price = price.replace('.', '').replace(',', '.').replace('R$', '')
         price = parseFloat(price)
@@ -173,7 +184,32 @@ module.exports = {
     let category = await Category.findById(ad.category).exec()
     let userInfo = await User.findById(ad.idUser).exec()
     let stateInfo = await State.findById(ad.state).exec()
-    console.log('Respondendo com os dados do anúncio')
+
+    let others =[]
+    if(other){
+      const otherData = await Ad.find({status: true, idUser: ad.idUser}).exec()
+
+      for(let i in otherData){
+        if(otherData[i]._id.toString() != ad._id.toString()){
+          let image = `${process.env.BASE}/media/default.jpg`
+          let defaultImg = otherData[i].images.find(e => e.default)
+
+
+          if(defaultImg){
+            image = `${process.env.BASE}/media/${defaultImg.url}`
+          }
+          others.push({
+              id: otherData[i]._id,
+              title: otherData[i]._tilte,
+              price: otherData[i]._price,
+              priceNegotiable: otherData[i]._priceNegotiable,
+              image
+          })
+
+        }
+      }
+    }
+
     res.json({
       id: ad._id,
       title: ad.title,
@@ -190,11 +226,89 @@ module.exports = {
         email: userInfo.email
       },
       stateName: stateInfo.name,
-      
+      others
       
     })
   },
   editAction: async (req, res) =>{
+      let { id } = req.params
+      let { title, status, price, priceneg, desc, cat, images, token } = req.body
 
+      if(id.length < 12 ){
+        res.json({error: 'ID inválido'})
+        return
+      }
+      const ad = await Ad.findById(id).exec()
+      if(!ad){
+        res.json({error: 'Anúncio inexistente'})
+        return
+      }
+      const user = await User.findOne({token}).exec()
+      if(user._id.toString() !== ad.idUser){
+        res.json({error: 'Este anúncio não é seu'})
+        return
+      }
+
+      let updates = {}
+
+      if(title){
+        updates.title = title
+      }
+      if(price){
+        price = price.replace('.', '').replace(',', '.').replace('R$', '')
+        price = parseFloat(price)
+        updates.price = price
+      }
+      if(priceneg){
+        updates.priceNegotiable = priceneg
+      }
+      if(status){
+        updates.status = status
+      }
+      if(desc){
+        updates.description = desc
+      }
+      if(cat){
+        const category = await Category.findOne({slug: cat}).exec()
+        if(!category){
+          res.json({error: 'Categoria inexistente'})
+          return
+        }
+        updates.category = category._id.toString()
+      }
+
+      if(images){
+        updates.images = images
+      }
+      await Ad.findByIdAndUpdate(id, {$set: updates})
+
+      if(req.files && req.files.img) {
+        const adI = await Ad.findById(id);
+
+        if(req.files.img.length == undefined) {
+            if(['image/jpeg', 'image/jpg', 'image/png'].includes(req.files.img.mimetype)) {
+                let url = await addImage(req.files.img.data);
+                adI.images.push({
+                    url,
+                    default: false
+                });
+            }
+        } else {
+            for(let i=0; i < req.files.img.length; i++) {
+                if(['image/jpeg', 'image/jpg', 'image/png'].includes(req.files.img[i].mimetype)) {
+                    let url = await addImage(req.files.img[i].data);
+                    adI.images.push({
+                        url,
+                        default: false
+                    });
+                }
+            }
+        }
+
+        adI.images = [...adI.images];
+        await adI.save();
+    }
+
+      res.json({error: ''})
   },
 }
